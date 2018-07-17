@@ -7,6 +7,8 @@ const float EPSILON = 0.00001;
 const int SW = 640;
 const int SH = 480;
 
+const std::string root = "C:/Users/ltyler/Documents/volume-rendering/";
+
 GLuint LoadVolume(const std::string& file, int xdim, int ydim, int zdim) {
     std::ifstream in(file, std::ios::binary);
     if (in.fail())
@@ -38,23 +40,23 @@ GLuint LoadVolume(const std::string& file, int xdim, int ydim, int zdim) {
 int main(int argc, char* argv[]) {
     PG::Window window("Volume Rendering by Raycasting", SW, SH);
 
-    PG::Camera camera(
-        PG::Transform(glm::vec3(2, -.2, 2),
-            glm::vec3(0, glm::radians(45.0f), 0))
-    );
+    PG::UserCamera camera(PG::Transform(
+        glm::vec3(0, 0, 4),
+        glm::vec3(0, 0, -1),
+        glm::vec3(0, 1, 0)));
 
     // shader for the first render pass to get the points where the ray exits the cube
     PG::Shader exitPointShader(
         "Volume Raycaster",
-        "C:/Users/ltyler/Documents/volume-rendering/shaders/exitPointShader.vert",
-        "C:/Users/ltyler/Documents/volume-rendering/shaders/exitPointShader.frag"
+        root + "shaders/exitPointShader.vert",
+        root + "shaders/exitPointShader.frag"
     );
 
     // shader for the second render pass, which does the ray marching
     PG::Shader volumeShader(
         "Volume Raycaster",
-        "C:/Users/ltyler/Documents/volume-rendering/shaders/volumeShader.vert",
-        "C:/Users/ltyler/Documents/volume-rendering/shaders/volumeShader.frag"
+        root + "shaders/volumeShader.vert",
+        root + "shaders/volumeShader.frag"
     );
 
     exitPointShader.Enable();
@@ -161,11 +163,11 @@ int main(int argc, char* argv[]) {
 
 
     // Load the actual volume
-    /*GLuint volTex = LoadVolume("C:/Users/ltyler/Documents/volume-rendering/data/head.raw", 256, 256, 109);
-    if (volTex == -1) {
-    std::cout << "Failed to load volume" << std::endl;
-    return 1;
-    }*/
+    GLuint volTex = LoadVolume("C:/Users/ltyler/Documents/volume-rendering/data/head.raw", 256, 256, 109);
+        if (volTex == -1) {
+        std::cout << "Failed to load volume" << std::endl;
+        return 1;
+    }
 
     //glEnable(GL_BLEND);
     //glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -173,6 +175,8 @@ int main(int argc, char* argv[]) {
 
     bool quit = false;
     SDL_Event event;
+    bool relative = true;
+    window.SetRelativeMouse(relative);
     while (!quit) {
         window.StartFrame();
         while (SDL_PollEvent(&event)) {
@@ -184,7 +188,21 @@ int main(int argc, char* argv[]) {
                 case SDLK_ESCAPE:
                     quit = true;
                     break;
-                case SDLK_p:
+                case SDLK_w:
+                    camera.velocity.z = 1;
+                    break;
+                case SDLK_s:
+                    camera.velocity.z = -1;
+                    break;
+                case SDLK_a:
+                    camera.velocity.x = -1;
+                    break;
+                case SDLK_d:
+                    camera.velocity.x = 1;
+                    break;
+                case SDLK_r:
+                    relative = !relative;
+                    window.SetRelativeMouse(relative);
                     break;
                 case SDLK_SPACE:
                     break;
@@ -194,15 +212,25 @@ int main(int argc, char* argv[]) {
                 switch (event.key.keysym.sym) {
                 case SDLK_SPACE:
                     break;
+                case SDLK_w:
+                case SDLK_s:
+                    camera.velocity.z = 0;
+                    break;
+                case SDLK_a:
+                case SDLK_d:
+                    camera.velocity.x = 0;
+                    break;
                 }
             }
             else if (event.type == SDL_MOUSEMOTION) {
                 float dx = (float)-event.motion.xrel;
                 float dy = (float)-event.motion.yrel;
+                camera.Rotate(glm::vec3(dy, dx, 0));
             }
         }
 
         float dt = window.GetDT();
+        camera.Update(dt);
 
        
         glEnable(GL_CULL_FACE);
@@ -216,6 +244,8 @@ int main(int argc, char* argv[]) {
         glBindVertexArray(cubeVAO);
 
         glm::mat4 model = glm::mat4(1);
+        model = glm::scale(model, glm::vec3(2));
+        model = glm::scale(model, glm::vec3(1, 1, 109.0f / 256));
         glm::mat4 MVP = camera.GetP() * camera.GetV() * model;
         glUniformMatrix4fv(exitPointShader["MVP"], 1, GL_FALSE, glm::value_ptr(MVP));
         glDrawElements(GL_TRIANGLES, 36, GL_UNSIGNED_SHORT, 0);
@@ -236,8 +266,10 @@ int main(int argc, char* argv[]) {
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, exitPointTex);
         glUniform1i(volumeShader["exitPointTex"], 0);
-
-
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_3D, volTex);
+        glUniform1i(volumeShader["volTex"], 1);
+        
         glUniformMatrix4fv(volumeShader["MVP"], 1, GL_FALSE, glm::value_ptr(MVP));
         glDrawElements(GL_TRIANGLES, 36, GL_UNSIGNED_SHORT, 0);
 
